@@ -22,6 +22,7 @@ const LLM_CONFIGS: Record<LLMProvider, LLMConfig> = {
       body: JSON.stringify({
         model: "gpt-5-nano-2025-08-07",
         messages: [{ role: "user", content: text }],
+        reasoning_effort: "low",
       }),
     }),
     parseResponse: (data) =>

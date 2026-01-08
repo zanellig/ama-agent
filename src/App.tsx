@@ -41,6 +41,7 @@ function App() {
   const silenceStartRef = useRef<number | null>(null);
   const silenceIntervalRef = useRef<number | null>(null);
   const isCancelledRef = useRef<boolean>(false);
+  const whisperSentRef = useRef<boolean>(false);
   const outputVolumeRef = useRef<number>(0);
   const ttsStopRef = useRef<(() => void) | null>(null);
 
@@ -115,9 +116,8 @@ function App() {
     setAgentState(null);
     setCurrentView('main');
     
-    // Hide the window
-    const appWindow = getCurrentWindow();
-    await appWindow.hide();
+    // Hide to tray via Tauri command (emits window-hidden event)
+    await invoke("hide_to_tray");
   }, [stopTTS]);
 
   // Get input volume from analyzer for Orb reactivity
@@ -251,8 +251,9 @@ function App() {
         await processAudio(audioBlob);
       };
 
-      // Reset cancelled flag when starting new recording
+      // Reset flags when starting new recording
       isCancelledRef.current = false;
+      whisperSentRef.current = false;
 
       mediaRecorder.start();
       setIsRecording(true);
@@ -276,17 +277,94 @@ function App() {
     });
 
     const unlistenHidden = listen("window-hidden", () => {
-      // Stop recording when window is hidden
-      if (isRecording) {
-        stopRecording();
+      // Full interrupt when hiding to tray
+      isCancelledRef.current = true;
+      
+      // Stop TTS if playing
+      stopTTS();
+      
+      // Stop recording if active
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
       }
+      // Clean up silence detection
+      if (silenceIntervalRef.current) {
+        clearInterval(silenceIntervalRef.current);
+        silenceIntervalRef.current = null;
+      }
+      silenceStartRef.current = null;
+      // Clean up audio
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      analyzerRef.current = null;
+      outputVolumeRef.current = 0;
+      whisperSentRef.current = false;
+      
+      setIsRecording(false);
+      setIsProcessing(false);
+      setStatus("Ready");
+      setAgentState(null);
+      setCurrentView('main');
+    });
+
+    // Handle shortcut-action when window is visible
+    const unlistenShortcut = listen("shortcut-action", () => {
+      if (agentState === "talking") {
+        // Interrupt TTS and restart listening
+        stopTTS();
+        setAgentState(null);
+        setStatus("Ready");
+        setIsProcessing(false);
+        outputVolumeRef.current = 0;
+        whisperSentRef.current = false;
+        startRecording();
+      } else if (agentState === "listening" && !whisperSentRef.current) {
+        // Cancel workflow before whisper request
+        isCancelledRef.current = true;
+        
+        // Stop recording
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        }
+        // Clean up silence detection
+        if (silenceIntervalRef.current) {
+          clearInterval(silenceIntervalRef.current);
+          silenceIntervalRef.current = null;
+        }
+        silenceStartRef.current = null;
+        // Clean up audio
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+        if (audioContextRef.current) {
+          audioContextRef.current.close();
+          audioContextRef.current = null;
+        }
+        analyzerRef.current = null;
+        
+        setIsRecording(false);
+        setAgentState(null);
+        setStatus("Ready");
+      } else if (!isRecording && !isProcessing) {
+        // Ready state - minimize to tray
+        invoke("hide_to_tray");
+      }
+      // If whisperSentRef.current is true (processing), do nothing
     });
 
     return () => {
       unlistenShown.then((fn) => fn());
       unlistenHidden.then((fn) => fn());
+      unlistenShortcut.then((fn) => fn());
     };
-  }, [isRecording, isProcessing, startRecording, stopRecording]);
+  }, [isRecording, isProcessing, agentState, startRecording, stopRecording, stopTTS]);
 
   // Resize window when view changes
   useEffect(() => {
@@ -311,6 +389,7 @@ function App() {
       // Transcribe audio
       setStatus("Transcribing...");
       setAgentState("thinking");
+      whisperSentRef.current = true;
       const text = await transcribeAudio(
         audioBlob,
         config.whisperUrl,
@@ -367,6 +446,7 @@ function App() {
       setAgentState(null);
       setIsProcessing(false);
       outputVolumeRef.current = 0;
+      whisperSentRef.current = false;
 
       // Auto-restart recording after response
       if (!isCancelledRef.current) {
@@ -415,8 +495,16 @@ function App() {
 
   // Main View - Centered Orb
   if (currentView === 'main') {
+    // Handle background click to hide window
+    const handleBackgroundClick = (e: React.MouseEvent<HTMLDivElement>) => {
+      // Only hide if clicking directly on the container (not on child elements)
+      if (e.target === e.currentTarget) {
+        hideWindow();
+      }
+    };
+
     return (
-      <div className="orb-container">
+      <div className="orb-container" onClick={handleBackgroundClick}>
         {/* Floating action buttons */}
         <div className="orb-actions">
           <button
