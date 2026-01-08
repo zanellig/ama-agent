@@ -83,10 +83,18 @@ pub fn run() {
 
             app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
                 if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    // Emit event to frontend to toggle recording
-                    let _ = window.emit("toggle-recording", ());
+                    // Toggle window visibility
+                    if window.is_visible().unwrap_or(false) {
+                        // Hide to tray
+                        let _ = window.hide();
+                        // Emit event so frontend knows to stop any ongoing processes
+                        let _ = window.emit("window-hidden", ());
+                    } else {
+                        // Show window and emit event to start recording
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        let _ = window.emit("window-shown", ());
+                    }
                 }
             })?;
 
