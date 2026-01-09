@@ -1,13 +1,13 @@
-export type LLMProvider = "openai" | "claude" | "gemini" | "perplexity";
+export type LLMProvider = "openai" | "claude" | "gemini" | "perplexity"
 
 interface LLMConfig {
-  url: string;
-  model: string;
+  url: string
+  model: string
   formatRequest: (
     text: string,
-    apiKey: string
-  ) => { headers: HeadersInit; body: string };
-  parseResponse: (data: unknown) => string;
+    apiKey: string,
+  ) => { headers: HeadersInit; body: string }
+  parseResponse: (data: unknown) => string
 }
 
 const LLM_CONFIGS: Record<LLMProvider, LLMConfig> = {
@@ -47,11 +47,11 @@ const LLM_CONFIGS: Record<LLMProvider, LLMConfig> = {
     }),
     parseResponse: (data) => {
       const content = (data as { content: { type: string; text?: string }[] })
-        .content;
+        .content
       return content
         .filter((block) => block.type === "text")
         .map((block) => block.text)
-        .join("");
+        .join("")
     },
   },
 
@@ -69,8 +69,8 @@ const LLM_CONFIGS: Record<LLMProvider, LLMConfig> = {
     parseResponse: (data) => {
       const candidates = (
         data as { candidates: { content: { parts: { text: string }[] } }[] }
-      ).candidates;
-      return candidates[0]?.content?.parts?.[0]?.text || "";
+      ).candidates
+      return candidates[0]?.content?.parts?.[0]?.text || ""
     },
   },
 
@@ -91,44 +91,44 @@ const LLM_CONFIGS: Record<LLMProvider, LLMConfig> = {
       (data as { choices: { message: { content: string } }[] }).choices[0]
         .message.content,
   },
-};
+}
 
 export async function sendToLLM(
   text: string,
   provider: LLMProvider,
-  apiKey: string
+  apiKey: string,
 ): Promise<string> {
-  const config = LLM_CONFIGS[provider];
+  const config = LLM_CONFIGS[provider]
 
   // Special handling for Gemini which uses URL params for auth
-  let url = config.url;
+  let url = config.url
   if (provider === "gemini") {
-    url = `${config.url}?key=${apiKey}`;
+    url = `${config.url}?key=${apiKey}`
   }
 
-  const { headers, body } = config.formatRequest(text, apiKey);
+  const { headers, body } = config.formatRequest(text, apiKey)
 
   const response = await fetch(url, {
     method: "POST",
     headers,
     body,
-  });
+  })
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`${provider} API error: ${response.status} - ${errorText}`);
+    const errorText = await response.text()
+    throw new Error(`${provider} API error: ${response.status} - ${errorText}`)
   }
 
-  const data = await response.json();
-  return config.parseResponse(data);
+  const data = await response.json()
+  return config.parseResponse(data)
 }
 
 // Streaming configurations for each provider
 interface StreamConfig {
-  getStreamUrl: (baseUrl: string, apiKey: string) => string;
-  getStreamBody: (text: string, model: string) => string;
-  getStreamHeaders: (apiKey: string) => HeadersInit;
-  parseChunk: (line: string) => string | null;
+  getStreamUrl: (baseUrl: string, apiKey: string) => string
+  getStreamBody: (text: string, model: string) => string
+  getStreamHeaders: (apiKey: string) => HeadersInit
+  parseChunk: (line: string) => string | null
 }
 
 const STREAM_CONFIGS: Record<LLMProvider, StreamConfig> = {
@@ -145,14 +145,14 @@ const STREAM_CONFIGS: Record<LLMProvider, StreamConfig> = {
       Authorization: `Bearer ${apiKey}`,
     }),
     parseChunk: (line) => {
-      if (!line.startsWith("data: ")) return null;
-      const data = line.slice(6);
-      if (data === "[DONE]") return null;
+      if (!line.startsWith("data: ")) return null
+      const data = line.slice(6)
+      if (data === "[DONE]") return null
       try {
-        const parsed = JSON.parse(data);
-        return parsed.choices?.[0]?.delta?.content || null;
+        const parsed = JSON.parse(data)
+        return parsed.choices?.[0]?.delta?.content || null
       } catch {
-        return null;
+        return null
       }
     },
   },
@@ -172,16 +172,16 @@ const STREAM_CONFIGS: Record<LLMProvider, StreamConfig> = {
       "anthropic-version": "2023-06-01",
     }),
     parseChunk: (line) => {
-      if (!line.startsWith("data: ")) return null;
-      const data = line.slice(6);
+      if (!line.startsWith("data: ")) return null
+      const data = line.slice(6)
       try {
-        const parsed = JSON.parse(data);
+        const parsed = JSON.parse(data)
         if (parsed.type === "content_block_delta") {
-          return parsed.delta?.text || null;
+          return parsed.delta?.text || null
         }
-        return null;
+        return null
       } catch {
-        return null;
+        return null
       }
     },
   },
@@ -198,13 +198,13 @@ const STREAM_CONFIGS: Record<LLMProvider, StreamConfig> = {
       "Content-Type": "application/json",
     }),
     parseChunk: (line) => {
-      if (!line.startsWith("data: ")) return null;
-      const data = line.slice(6);
+      if (!line.startsWith("data: ")) return null
+      const data = line.slice(6)
       try {
-        const parsed = JSON.parse(data);
-        return parsed.candidates?.[0]?.content?.parts?.[0]?.text || null;
+        const parsed = JSON.parse(data)
+        return parsed.candidates?.[0]?.content?.parts?.[0]?.text || null
       } catch {
-        return null;
+        return null
       }
     },
   },
@@ -222,78 +222,78 @@ const STREAM_CONFIGS: Record<LLMProvider, StreamConfig> = {
       Authorization: `Bearer ${apiKey}`,
     }),
     parseChunk: (line) => {
-      if (!line.startsWith("data: ")) return null;
-      const data = line.slice(6);
-      if (data === "[DONE]") return null;
+      if (!line.startsWith("data: ")) return null
+      const data = line.slice(6)
+      if (data === "[DONE]") return null
       try {
-        const parsed = JSON.parse(data);
-        return parsed.choices?.[0]?.delta?.content || null;
+        const parsed = JSON.parse(data)
+        return parsed.choices?.[0]?.delta?.content || null
       } catch {
-        return null;
+        return null
       }
     },
   },
-};
+}
 
 export async function* streamToLLM(
   text: string,
   provider: LLMProvider,
-  apiKey: string
+  apiKey: string,
 ): AsyncGenerator<string, void, unknown> {
-  const llmConfig = LLM_CONFIGS[provider];
-  const streamConfig = STREAM_CONFIGS[provider];
+  const llmConfig = LLM_CONFIGS[provider]
+  const streamConfig = STREAM_CONFIGS[provider]
 
-  const url = streamConfig.getStreamUrl(llmConfig.url, apiKey);
-  const headers = streamConfig.getStreamHeaders(apiKey);
-  const body = streamConfig.getStreamBody(text, llmConfig.model);
+  const url = streamConfig.getStreamUrl(llmConfig.url, apiKey)
+  const headers = streamConfig.getStreamHeaders(apiKey)
+  const body = streamConfig.getStreamBody(text, llmConfig.model)
 
   const response = await fetch(url, {
     method: "POST",
     headers,
     body,
-  });
+  })
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`${provider} API error: ${response.status} - ${errorText}`);
+    const errorText = await response.text()
+    throw new Error(`${provider} API error: ${response.status} - ${errorText}`)
   }
 
-  const reader = response.body?.getReader();
+  const reader = response.body?.getReader()
   if (!reader) {
-    throw new Error("Failed to get response reader");
+    throw new Error("Failed to get response reader")
   }
 
-  const decoder = new TextDecoder();
-  let buffer = "";
+  const decoder = new TextDecoder()
+  let buffer = ""
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const { done, value } = await reader.read()
+      if (done) break
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split("\n")
+      buffer = lines.pop() || ""
 
       for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (!trimmedLine) continue;
+        const trimmedLine = line.trim()
+        if (!trimmedLine) continue
 
-        const content = streamConfig.parseChunk(trimmedLine);
+        const content = streamConfig.parseChunk(trimmedLine)
         if (content) {
-          yield content;
+          yield content
         }
       }
     }
 
     // Process any remaining buffer
     if (buffer.trim()) {
-      const content = streamConfig.parseChunk(buffer.trim());
+      const content = streamConfig.parseChunk(buffer.trim())
       if (content) {
-        yield content;
+        yield content
       }
     }
   } finally {
-    reader.releaseLock();
+    reader.releaseLock()
   }
 }
