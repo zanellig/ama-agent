@@ -1,27 +1,22 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { Streamdown } from "streamdown"
 import "./App.css"
-import { KeysConfigModal } from "./components/KeysConfigModal"
+import { type Config, KeysConfigModal } from "./components/KeysConfigModal"
 import { type AgentState, Orb } from "./components/ui/orb"
 import { isAudioSilent } from "./lib/audio-utils"
-import { type LLMProvider, sendToLLM } from "./lib/llm"
+import { streamToLLM } from "./lib/llm"
 import { chunkText, speakWithTTS } from "./lib/tts"
 import { transcribeAudio } from "./lib/whisper"
-
-interface Config {
-  whisperUrl: string
-  whisperApiKey: string
-  llmProvider: LLMProvider
-  llmApiKey: string
-}
 
 const defaultConfig: Config = {
   whisperUrl: "https://api.openai.com/v1/audio/transcriptions",
   whisperApiKey: "",
   llmProvider: "openai",
-  llmApiKey: "",
+  openaiApiKey: "",
+  geminiApiKey: "",
+  anthropicApiKey: "",
 }
 
 // Settings modal state managed by isSettingsOpen boolean
@@ -34,6 +29,8 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [configDraft, setConfigDraft] = useState<Config>(defaultConfig)
   const [agentState, setAgentState] = useState<AgentState>(null)
+  const [streamingResponse, setStreamingResponse] = useState<string>("")
+  const [isStreaming, setIsStreaming] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
@@ -56,13 +53,6 @@ function App() {
         setConfigDraft(merged)
       })
       .catch(console.error)
-  }, [])
-
-  // Helper function to resize window
-  const resizeWindow = useCallback(async () => {
-    const appWindow = getCurrentWindow()
-    await appWindow.setSize(new LogicalSize(400, 450))
-    await appWindow.center()
   }, [])
 
   const stopRecording = useCallback(() => {
@@ -101,7 +91,9 @@ function App() {
     silenceStartRef.current = null
     // Clean up audio
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop()
+      })
       streamRef.current = null
     }
     if (audioContextRef.current) {
@@ -144,14 +136,30 @@ function App() {
   }, [])
 
   const processAudio = async (audioBlob: Blob) => {
-    if (!config.whisperApiKey) {
-      setStatus("Configure API keys")
+    // Get the appropriate LLM API key based on provider
+    const getLLMApiKey = () => {
+      switch (config.llmProvider) {
+        case "openai":
+          return config.openaiApiKey
+        case "gemini":
+          return config.geminiApiKey
+        case "claude":
+          return config.anthropicApiKey
+        default:
+          return config.openaiApiKey
+      }
+    }
+
+    if (!config.openaiApiKey) {
+      setStatus("Configure OpenAI API key")
       setIsSettingsOpen(true)
       setAgentState(null)
       return
     }
-    if (!config.llmApiKey) {
-      setStatus("Configure API keys")
+
+    const llmApiKey = getLLMApiKey()
+    if (!llmApiKey) {
+      setStatus(`Configure ${config.llmProvider} API key`)
       setIsSettingsOpen(true)
       setAgentState(null)
       return
@@ -192,27 +200,50 @@ function App() {
         return
       }
 
-      // Get LLM response (non-streaming for TTS)
+      console.log("[App] Transcription result:", text)
+      console.log("[App] LLM Provider:", config.llmProvider)
+      console.log("[App] LLM API Key present:", !!llmApiKey)
+
+      // Get LLM response with streaming
       setStatus("Thinking...")
-      const response = await sendToLLM(
+      setStreamingResponse("")
+
+      console.log("[App] Starting LLM streaming...")
+      let fullResponse = ""
+      let isFirstChunk = true
+      for await (const chunk of streamToLLM(
         text,
         config.llmProvider,
-        config.llmApiKey,
+        llmApiKey,
+      )) {
+        if (isCancelledRef.current) break
+        // Only start streaming UI on first chunk (shifts the orb)
+        if (isFirstChunk) {
+          setIsStreaming(true)
+          isFirstChunk = false
+        }
+        fullResponse += chunk
+        setStreamingResponse(fullResponse)
+        console.log("[App] Received chunk:", chunk.substring(0, 50))
+      }
+      console.log(
+        "[App] LLM streaming complete, total length:",
+        fullResponse.length,
       )
 
-      // Speak the response with TTS
+      // Speak the response with TTS (audio streams as it's received)
       setStatus("Speaking...")
       setAgentState("talking")
 
-      // Chunk text if too long for TTS
-      const chunks = chunkText(response)
+      // Chunk text if too long for TTS (4096 char limit)
+      const chunks = chunkText(fullResponse)
 
       for (const chunk of chunks) {
         if (isCancelledRef.current) break
 
         const { stop, finished } = await speakWithTTS(
           chunk,
-          config.whisperApiKey, // Reuse OpenAI key
+          config.openaiApiKey, // OpenAI key for TTS
           { voice: "alloy", model: "tts-1" },
           (volume) => {
             outputVolumeRef.current = volume
@@ -223,6 +254,10 @@ function App() {
         await finished
         ttsStopRef.current = null
       }
+
+      // Clear streaming state
+      setIsStreaming(false)
+      setStreamingResponse("")
 
       setStatus("Ready")
       setAgentState(null)
@@ -238,9 +273,22 @@ function App() {
       }
     } catch (err) {
       console.error("Processing error:", err)
-      setStatus(
-        `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
-      )
+
+      // Clean up streaming state
+      setIsStreaming(false)
+      setStreamingResponse("")
+
+      // Extract error message from various error formats
+      let errorMessage = "Unknown error"
+      if (err instanceof Error) {
+        errorMessage = err.message
+      } else if (typeof err === "object" && err !== null && "message" in err) {
+        errorMessage = String((err as { message: unknown }).message)
+      } else if (typeof err === "string") {
+        errorMessage = err
+      }
+
+      setStatus(`Error: ${errorMessage}`)
       setIsProcessing(false)
       setAgentState(null)
       outputVolumeRef.current = 0
@@ -249,7 +297,7 @@ function App() {
 
   const startRecording = useCallback(async () => {
     // Check for API keys first
-    if (!config.whisperApiKey || !config.llmApiKey) {
+    if (!config.openaiApiKey) {
       setStatus("Configure API keys first")
       setIsSettingsOpen(true)
       return
@@ -343,7 +391,9 @@ function App() {
 
         // Clean up stream and audio context
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => track.stop())
+          streamRef.current.getTracks().forEach((track) => {
+            track.stop()
+          })
           streamRef.current = null
         }
         if (audioContextRef.current) {
@@ -378,7 +428,12 @@ function App() {
       setStatus("Microphone access denied")
       setAgentState(null)
     }
-  }, [config.whisperApiKey, config.llmApiKey])
+  }, [
+    config.openaiApiKey,
+    config.llmProvider,
+    config.geminiApiKey,
+    config.anthropicApiKey,
+  ])
 
   // Listen for window-shown event to auto-start recording
   useEffect(() => {
@@ -411,7 +466,9 @@ function App() {
       silenceStartRef.current = null
       // Clean up audio
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current.getTracks().forEach((track) => {
+          track.stop()
+        })
         streamRef.current = null
       }
       if (audioContextRef.current) {
@@ -459,7 +516,9 @@ function App() {
         silenceStartRef.current = null
         // Clean up audio
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => track.stop())
+          streamRef.current.getTracks().forEach((track) => {
+            track.stop()
+          })
           streamRef.current = null
         }
         if (audioContextRef.current) {
@@ -484,11 +543,6 @@ function App() {
       unlistenShortcut.then((fn) => fn())
     }
   }, [isRecording, isProcessing, agentState, startRecording, stopTTS])
-
-  // Resize window on mount
-  useEffect(() => {
-    resizeWindow()
-  }, [resizeWindow])
 
   const saveSettings = async () => {
     try {
@@ -598,22 +652,39 @@ function App() {
         </button>
       </div>
 
-      {/* Centered Orb */}
-      <div className="orb-wrapper" onClick={handleOrbClick}>
-        <Orb
-          agentState={agentState}
-          getInputVolume={getInputVolume}
-          getOutputVolume={getOutputVolume}
-          colors={["#7f22fe", "#7c5cff66"]}
-        />
-      </div>
+      {/* Centered Orb and Response Container */}
+      <div className="orb-response-container">
+        <div className={`orb-section ${isStreaming ? "shifted" : ""}`}>
+          <div
+            className="orb-wrapper"
+            onClick={handleOrbClick}
+            onKeyDown={(e) => e.key === "Enter" && handleOrbClick()}
+            role="button"
+            tabIndex={0}
+          >
+            <Orb
+              agentState={agentState}
+              getInputVolume={getInputVolume}
+              getOutputVolume={getOutputVolume}
+              colors={["#7f22fe", "#7c5cff"]}
+            />
+          </div>
 
-      {/* Status text below Orb */}
-      <div className="orb-status">
-        {isProcessing && agentState === "talking" && (
-          <span className="streaming-indicator">●</span>
+          {/* Status text below Orb */}
+          <div className="orb-status">
+            {isProcessing && agentState === "talking" && (
+              <span className="streaming-indicator">●</span>
+            )}
+            <span>{status}</span>
+          </div>
+        </div>
+
+        {/* Streaming Response */}
+        {isStreaming && streamingResponse && (
+          <div className="response-container">
+            <Streamdown>{streamingResponse}</Streamdown>
+          </div>
         )}
-        <span>{status}</span>
       </div>
 
       {/* Settings Modal */}

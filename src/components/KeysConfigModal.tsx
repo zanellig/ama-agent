@@ -18,11 +18,13 @@ import {
 } from "@/components/ui/select"
 import type { LLMProvider } from "@/lib/llm"
 
-interface Config {
+export interface Config {
   whisperUrl: string
   whisperApiKey: string
   llmProvider: LLMProvider
-  llmApiKey: string
+  openaiApiKey: string
+  geminiApiKey: string
+  anthropicApiKey: string
 }
 
 interface KeysConfigModalProps {
@@ -48,7 +50,7 @@ export function KeysConfigModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="bg-[rgba(25,25,35,0.98)] border-[rgba(255,255,255,0.1)] backdrop-blur-xl max-w-[360px]"
+        className="bg-[rgba(25,25,35,0.98)] border-[rgba(255,255,255,0.1)] backdrop-blur-xl max-w-[360px] p-6"
         showCloseButton={true}
       >
         <DialogHeader>
@@ -60,31 +62,8 @@ export function KeysConfigModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2">
-          {/* Whisper API Key */}
-          <div className="grid gap-2">
-            <Label
-              htmlFor="whisper-key"
-              className="text-[#a0a0b0] text-xs uppercase tracking-wide"
-            >
-              Whisper API Key
-            </Label>
-            <Input
-              id="whisper-key"
-              type="password"
-              value={config.whisperApiKey}
-              onChange={(e) =>
-                onConfigChange({
-                  ...config,
-                  whisperApiKey: e.target.value,
-                })
-              }
-              placeholder="sk-..."
-              className="bg-[rgba(0,0,0,0.3)] border-[rgba(255,255,255,0.1)] text-[#f0f0f5] placeholder:text-[#606070]"
-            />
-          </div>
-
-          {/* LLM Provider */}
+        <div className="grid gap-4 py-4">
+          {/* LLM Provider Selection */}
           <div className="grid gap-2">
             <Label
               htmlFor="llm-provider"
@@ -111,35 +90,85 @@ export function KeysConfigModal({
                 <SelectItem value="openai" className="text-[#f0f0f5]">
                   OpenAI
                 </SelectItem>
-                <SelectItem value="claude" className="text-[#f0f0f5]">
-                  Claude
-                </SelectItem>
                 <SelectItem value="gemini" className="text-[#f0f0f5]">
-                  Gemini
+                  Google Gemini
                 </SelectItem>
-                <SelectItem value="perplexity" className="text-[#f0f0f5]">
-                  Perplexity
+                <SelectItem value="claude" className="text-[#f0f0f5]">
+                  Anthropic Claude
                 </SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          {/* LLM API Key */}
+          {/* OpenAI API Key - Always needed for Whisper + TTS */}
           <div className="grid gap-2">
             <Label
-              htmlFor="llm-key"
+              htmlFor="openai-key"
               className="text-[#a0a0b0] text-xs uppercase tracking-wide"
             >
-              LLM API Key
+              OpenAI API Key
+              <span className="text-[#606070] ml-1 normal-case">
+                (Whisper + TTS{config.llmProvider === "openai" ? " + LLM" : ""})
+              </span>
             </Label>
             <Input
-              id="llm-key"
+              id="openai-key"
               type="password"
-              value={config.llmApiKey}
+              value={config.openaiApiKey}
               onChange={(e) =>
-                onConfigChange({ ...config, llmApiKey: e.target.value })
+                onConfigChange({
+                  ...config,
+                  openaiApiKey: e.target.value,
+                  whisperApiKey: e.target.value, // Keep in sync for Whisper
+                })
               }
-              placeholder="API key"
+              placeholder="sk-..."
+              className="bg-[rgba(0,0,0,0.3)] border-[rgba(255,255,255,0.1)] text-[#f0f0f5] placeholder:text-[#606070]"
+            />
+          </div>
+
+          {/* Gemini API Key */}
+          <div className="grid gap-2">
+            <Label
+              htmlFor="gemini-key"
+              className="text-[#a0a0b0] text-xs uppercase tracking-wide"
+            >
+              Google Gemini API Key
+              {config.llmProvider === "gemini" && (
+                <span className="text-[#606070] ml-1 normal-case">(LLM)</span>
+              )}
+            </Label>
+            <Input
+              id="gemini-key"
+              type="password"
+              value={config.geminiApiKey}
+              onChange={(e) =>
+                onConfigChange({ ...config, geminiApiKey: e.target.value })
+              }
+              placeholder="AI..."
+              className="bg-[rgba(0,0,0,0.3)] border-[rgba(255,255,255,0.1)] text-[#f0f0f5] placeholder:text-[#606070]"
+            />
+          </div>
+
+          {/* Anthropic API Key */}
+          <div className="grid gap-2">
+            <Label
+              htmlFor="anthropic-key"
+              className="text-[#a0a0b0] text-xs uppercase tracking-wide"
+            >
+              Anthropic API Key
+              {config.llmProvider === "claude" && (
+                <span className="text-[#606070] ml-1 normal-case">(LLM)</span>
+              )}
+            </Label>
+            <Input
+              id="anthropic-key"
+              type="password"
+              value={config.anthropicApiKey}
+              onChange={(e) =>
+                onConfigChange({ ...config, anthropicApiKey: e.target.value })
+              }
+              placeholder="sk-ant-..."
               className="bg-[rgba(0,0,0,0.3)] border-[rgba(255,255,255,0.1)] text-[#f0f0f5] placeholder:text-[#606070]"
             />
           </div>
@@ -147,6 +176,7 @@ export function KeysConfigModal({
 
         <DialogFooter>
           <Button
+            type="button"
             onClick={handleSave}
             className="w-full bg-[#7C5CFF] hover:bg-[#9b7fff] text-white font-medium"
           >

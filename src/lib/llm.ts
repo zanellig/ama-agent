@@ -139,6 +139,7 @@ const STREAM_CONFIGS: Record<LLMProvider, StreamConfig> = {
         model,
         messages: [{ role: "user", content: text }],
         stream: true,
+        reasoning_effort: "low", // Required for gpt-5-nano models
       }),
     getStreamHeaders: (apiKey) => ({
       "Content-Type": "application/json",
@@ -187,19 +188,26 @@ const STREAM_CONFIGS: Record<LLMProvider, StreamConfig> = {
   },
 
   gemini: {
-    getStreamUrl: (baseUrl, apiKey) =>
-      baseUrl.replace(":generateContent", ":streamGenerateContent") +
-      `?key=${apiKey}&alt=sse`,
+    getStreamUrl: (baseUrl, _apiKey) => {
+      // Replace generateContent with streamGenerateContent
+      const streamUrl = baseUrl.replace(
+        ":generateContent",
+        ":streamGenerateContent",
+      )
+      return `${streamUrl}?alt=sse`
+    },
     getStreamBody: (text) =>
       JSON.stringify({
         contents: [{ parts: [{ text }] }],
       }),
-    getStreamHeaders: () => ({
+    getStreamHeaders: (apiKey) => ({
       "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
     }),
     parseChunk: (line) => {
       if (!line.startsWith("data: ")) return null
-      const data = line.slice(6)
+      const data = line.slice(6).trim()
+      if (!data) return null
       try {
         const parsed = JSON.parse(data)
         return parsed.candidates?.[0]?.content?.parts?.[0]?.text || null
@@ -247,6 +255,9 @@ export async function* streamToLLM(
   const headers = streamConfig.getStreamHeaders(apiKey)
   const body = streamConfig.getStreamBody(text, llmConfig.model)
 
+  console.log(`[LLM] Calling ${provider} API:`, url)
+  console.log(`[LLM] Body:`, body)
+
   const response = await fetch(url, {
     method: "POST",
     headers,
@@ -255,8 +266,11 @@ export async function* streamToLLM(
 
   if (!response.ok) {
     const errorText = await response.text()
+    console.error(`[LLM] Error:`, response.status, errorText)
     throw new Error(`${provider} API error: ${response.status} - ${errorText}`)
   }
+
+  console.log(`[LLM] Response OK, starting stream...`)
 
   const reader = response.body?.getReader()
   if (!reader) {
