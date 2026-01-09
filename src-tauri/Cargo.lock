@@ -33,6 +33,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ama-agent"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -658,19 +671,6 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 2.0.114",
-]
-
-[[package]]
-name = "desktop-audio-agent"
-version = "0.1.0"
-dependencies = [
- "dirs 5.0.1",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
 ]
 
 [[package]]

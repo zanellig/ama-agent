@@ -1,4 +1,4 @@
-# Releasing Desktop Audio Agent
+# Releasing AMA Agent
 
 ## Prerequisites
 

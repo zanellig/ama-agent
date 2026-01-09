@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Desktop Audio Agent",
+  "productName": "AMA Agent",
   "version": "0.1.0",
-  "identifier": "com.cogniar.desktop-audio-agent",
+  "identifier": "com.cogniar.ama-agent",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "Desktop Audio Agent",
+        "title": "AMA Agent",
         "width": 500,
         "height": 500,
         "resizable": true,

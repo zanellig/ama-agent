@@ -17,7 +17,7 @@ const SHORTCUT_DEBOUNCE_MS: u64 = 300;
 fn get_config() -> Result<serde_json::Value, String> {
     let config_path = dirs::config_dir()
         .ok_or("Could not find config directory")?
-        .join("desktop-audio-agent")
+        .join("ama-agent")
         .join("config.json");
 
     if config_path.exists() {
@@ -37,7 +37,7 @@ fn get_config() -> Result<serde_json::Value, String> {
 fn save_config(config: serde_json::Value) -> Result<(), String> {
     let config_dir = dirs::config_dir()
         .ok_or("Could not find config directory")?
-        .join("desktop-audio-agent");
+        .join("ama-agent");
 
     std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
 
