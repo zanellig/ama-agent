@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import "./App.css"
 import { KeysConfigModal } from "./components/KeysConfigModal"
 import { type AgentState, Orb } from "./components/ui/orb"
+import { isAudioSilent } from "./lib/audio-utils"
 import { type LLMProvider, sendToLLM } from "./lib/llm"
 import { chunkText, speakWithTTS } from "./lib/tts"
 import { transcribeAudio } from "./lib/whisper"
@@ -157,9 +158,19 @@ function App() {
     }
 
     try {
+      // Check if audio is completely silent before sending to Whisper
+      setStatus("Analyzing audio...")
+      setAgentState("thinking")
+      const isSilent = await isAudioSilent(audioBlob)
+      if (isSilent) {
+        setStatus("No speech detected")
+        setIsProcessing(false)
+        setAgentState(null)
+        return
+      }
+
       // Transcribe audio
       setStatus("Transcribing...")
-      setAgentState("thinking")
       whisperSentRef.current = true
       const text = await transcribeAudio(
         audioBlob,
