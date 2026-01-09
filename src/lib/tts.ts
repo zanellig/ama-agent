@@ -1,3 +1,6 @@
+import { createOpenAI } from "@ai-sdk/openai"
+import { experimental_generateSpeech as generateSpeech } from "ai"
+
 export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer"
 
 export interface TTSOptions {
@@ -7,8 +10,7 @@ export interface TTSOptions {
 }
 
 /**
- * Stream and play TTS audio using OpenAI's Text-to-Speech API
- * Audio starts playing as chunks arrive for lower latency
+ * Generate speech using AI SDK and play with volume monitoring
  */
 export async function streamTTS(
   text: string,
@@ -16,34 +18,34 @@ export async function streamTTS(
   options: TTSOptions = {},
   onOutputVolume?: (volume: number) => void,
 ): Promise<{ stop: () => void; finished: Promise<void> }> {
-  const { voice = "alloy", model = "tts-1", speed = 1.0 } = options
+  const { voice = "alloy", model = "tts-1-hd", speed = 1.0 } = options
 
-  // Call OpenAI TTS API with streaming
-  const response = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+  // Generate speech using AI SDK
+  const openai = createOpenAI({ apiKey })
+  const result = await generateSpeech({
+    model: openai.speech(model),
+    text,
+    voice,
+    providerOptions: {
+      openai: {
+        speed,
+        response_format: "mp3",
+      },
     },
-    body: JSON.stringify({
-      model,
-      input: text,
-      voice,
-      speed,
-      response_format: "mp3", // MP3 works well for streaming
-    }),
   })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`TTS API error: ${response.status} - ${errorText}`)
-  }
+  // Play the generated audio with volume monitoring
+  // AI SDK returns audio as GeneratedAudioFile with uint8Array property
+  return playAudioWithMonitoring(result.audio.uint8Array, onOutputVolume)
+}
 
-  const reader = response.body?.getReader()
-  if (!reader) {
-    throw new Error("Failed to get response reader")
-  }
-
+/**
+ * Play audio data with volume monitoring and stop controls
+ */
+async function playAudioWithMonitoring(
+  audioData: Uint8Array,
+  onOutputVolume?: (volume: number) => void,
+): Promise<{ stop: () => void; finished: Promise<void> }> {
   // Set up Web Audio API
   const audioContext = new AudioContext()
   const analyzer = audioContext.createAnalyser()
@@ -54,10 +56,6 @@ export async function streamTTS(
   let stopped = false
   let animationFrameId: number | null = null
   const dataArray = new Uint8Array(analyzer.frequencyBinCount)
-
-  // Queue for audio chunks
-  const audioQueue: AudioBufferSourceNode[] = []
-  // let nextStartTime = audioContext.currentTime;
   let isPlaying = false
 
   // Volume monitoring
@@ -89,90 +87,73 @@ export async function streamTTS(
     if (onOutputVolume) {
       onOutputVolume(0)
     }
-    // Stop all queued audio
-    for (const source of audioQueue) {
+    audioContext.close()
+  }
+
+  // Audio source reference for stop
+  let activeSource: AudioBufferSourceNode | null = null
+
+  // Stop function
+  const stop = () => {
+    if (activeSource) {
       try {
-        source.stop()
+        activeSource.stop()
       } catch {
         // Ignore errors from already stopped sources
       }
     }
-    audioQueue.length = 0
-    audioContext.close()
-  }
-
-  // Stop function
-  const stop = () => {
-    reader.cancel()
     cleanup()
   }
 
   // Start volume monitoring
   monitorVolume()
 
-  // Collect all chunks first, then play
-  // (MP3 streaming requires complete frames for decoding)
-  const chunks: Uint8Array[] = []
-
-  const finished = new Promise<void>(async (resolve, reject) => {
+  const finished = (async () => {
     try {
-      // Read all chunks
-      while (!stopped) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value) {
-          chunks.push(value)
-        }
-      }
-
       if (stopped) {
-        resolve()
         return
       }
 
-      // Combine chunks into single buffer
-      const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0)
-      const combined = new Uint8Array(totalLength)
-      let offset = 0
-      for (const chunk of chunks) {
-        combined.set(chunk, offset)
-        offset += chunk.length
-      }
-
-      // Decode and play
-      const audioBuffer = await audioContext.decodeAudioData(combined.buffer)
+      // Decode and play - create a copy of the ArrayBuffer for decodeAudioData
+      const bufferCopy = audioData.buffer.slice(
+        audioData.byteOffset,
+        audioData.byteOffset + audioData.byteLength,
+      ) as ArrayBuffer
+      const audioBuffer = await audioContext.decodeAudioData(bufferCopy)
 
       if (stopped) {
-        resolve()
         return
       }
 
       const source = audioContext.createBufferSource()
       source.buffer = audioBuffer
       source.connect(analyzer)
+      activeSource = source
 
       isPlaying = true
 
-      source.onended = () => {
-        isPlaying = false
-        cleanup()
-        resolve()
-      }
-
+      // Start playback and wait for audio to finish
       source.start(0)
-      audioQueue.push(source)
+      await new Promise<void>((resolvePlayback) => {
+        source.onended = () => {
+          isPlaying = false
+          activeSource = null
+          cleanup()
+          resolvePlayback()
+        }
+      })
     } catch (err) {
       cleanup()
-      reject(err)
+      throw err
     }
-  })
+  })()
 
   return { stop, finished }
 }
 
 /**
  * Stream TTS with true chunk-by-chunk playback using PCM format
- * Lower latency but more complex audio handling
+ * Uses AI SDK for generation, custom playback for low latency
  */
 export async function streamTTSRealtime(
   text: string,
@@ -182,33 +163,32 @@ export async function streamTTSRealtime(
 ): Promise<{ stop: () => void; finished: Promise<void> }> {
   const { voice = "alloy", model = "tts-1", speed = 1.0 } = options
 
-  // Use PCM format for true streaming (requires manual audio handling)
-  const response = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+  // Generate speech using AI SDK with PCM format for streaming
+  const openai = createOpenAI({ apiKey })
+  const result = await generateSpeech({
+    model: openai.speech(model),
+    text,
+    voice,
+    providerOptions: {
+      openai: {
+        speed,
+        response_format: "pcm",
+      },
     },
-    body: JSON.stringify({
-      model,
-      input: text,
-      voice,
-      speed,
-      response_format: "pcm", // Raw PCM for streaming
-    }),
   })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`TTS API error: ${response.status} - ${errorText}`)
-  }
+  // Play PCM audio with volume monitoring
+  return playPCMAudioWithMonitoring(result.audio.uint8Array, onOutputVolume)
+}
 
-  const reader = response.body?.getReader()
-  if (!reader) {
-    throw new Error("Failed to get response reader")
-  }
-
-  // PCM format: 24kHz, 16-bit, mono
+/**
+ * Play PCM audio data with volume monitoring
+ * PCM format: 24kHz, 16-bit, mono
+ */
+async function playPCMAudioWithMonitoring(
+  pcmData: Uint8Array,
+  onOutputVolume?: (volume: number) => void,
+): Promise<{ stop: () => void; finished: Promise<void> }> {
   const SAMPLE_RATE = 24000
   const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE })
 
@@ -219,10 +199,7 @@ export async function streamTTSRealtime(
   let stopped = false
   let animationFrameId: number | null = null
   const dataArray = new Uint8Array(analyzer.frequencyBinCount)
-
-  // Scheduling for gapless playback
-  let nextStartTime = audioContext.currentTime + 0.1 // Small initial buffer
-  const activeSources: AudioBufferSourceNode[] = []
+  let activeSource: AudioBufferSourceNode | null = null
 
   // Volume monitoring
   const monitorVolume = () => {
@@ -252,114 +229,58 @@ export async function streamTTSRealtime(
     if (onOutputVolume) {
       onOutputVolume(0)
     }
-    for (const source of activeSources) {
-      try {
-        source.stop()
-      } catch {
-        /* ignore */
-      }
-    }
-    activeSources.length = 0
     audioContext.close()
   }
 
   const stop = () => {
-    reader.cancel()
+    if (activeSource) {
+      try {
+        activeSource.stop()
+      } catch {
+        /* ignore */
+      }
+    }
     cleanup()
   }
 
   monitorVolume()
 
-  // Process PCM chunks and schedule playback
-  let pendingData = new Uint8Array(0)
-  const CHUNK_SIZE = 4800 // 100ms of audio at 24kHz mono 16-bit
-
-  const scheduleChunk = (pcmData: Int16Array) => {
-    if (stopped) return
-
-    // Convert Int16 PCM to Float32
-    const floatData = new Float32Array(pcmData.length)
-    for (let i = 0; i < pcmData.length; i++) {
-      floatData[i] = pcmData[i] / 32768
-    }
-
-    // Create audio buffer
-    const buffer = audioContext.createBuffer(1, floatData.length, SAMPLE_RATE)
-    buffer.getChannelData(0).set(floatData)
-
-    // Create and schedule source
-    const source = audioContext.createBufferSource()
-    source.buffer = buffer
-    source.connect(analyzer)
-
-    // Ensure we don't schedule in the past
-    const now = audioContext.currentTime
-    if (nextStartTime < now) {
-      nextStartTime = now + 0.01
-    }
-
-    source.start(nextStartTime)
-    nextStartTime += buffer.duration
-
-    activeSources.push(source)
-
-    // Clean up finished sources
-    source.onended = () => {
-      const idx = activeSources.indexOf(source)
-      if (idx > -1) activeSources.splice(idx, 1)
-    }
-  }
-
-  const finished = new Promise<void>(async (resolve, reject) => {
+  const finished = new Promise<void>((resolve, reject) => {
     try {
-      while (!stopped) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (!value) continue
-
-        // Combine with pending data
-        const combined = new Uint8Array(pendingData.length + value.length)
-        combined.set(pendingData)
-        combined.set(value, pendingData.length)
-
-        // Process complete chunks
-        let offset = 0
-        while (offset + CHUNK_SIZE * 2 <= combined.length) {
-          const chunkBytes = combined.slice(offset, offset + CHUNK_SIZE * 2)
-          const pcmData = new Int16Array(
-            chunkBytes.buffer,
-            chunkBytes.byteOffset,
-            CHUNK_SIZE,
-          )
-          scheduleChunk(pcmData)
-          offset += CHUNK_SIZE * 2
-        }
-
-        // Keep remaining bytes for next iteration
-        pendingData = combined.slice(offset)
+      if (stopped) {
+        resolve()
+        return
       }
 
-      // Process remaining data
-      if (pendingData.length >= 2 && !stopped) {
-        const samples = Math.floor(pendingData.length / 2)
-        const pcmData = new Int16Array(
-          pendingData.buffer,
-          pendingData.byteOffset,
-          samples,
-        )
-        scheduleChunk(pcmData)
+      // Convert PCM Int16 to Float32
+      const samples = pcmData.length / 2
+      const int16Data = new Int16Array(
+        pcmData.buffer,
+        pcmData.byteOffset,
+        samples,
+      )
+      const floatData = new Float32Array(samples)
+      for (let i = 0; i < samples; i++) {
+        floatData[i] = int16Data[i] / 32768
       }
 
-      // Wait for all audio to finish
-      if (!stopped) {
-        const remainingTime = nextStartTime - audioContext.currentTime
-        if (remainingTime > 0) {
-          await new Promise((r) => setTimeout(r, remainingTime * 1000 + 100))
-        }
+      // Create audio buffer
+      const buffer = audioContext.createBuffer(1, floatData.length, SAMPLE_RATE)
+      buffer.getChannelData(0).set(floatData)
+
+      // Create and play source
+      const source = audioContext.createBufferSource()
+      source.buffer = buffer
+      source.connect(analyzer)
+      activeSource = source
+
+      source.onended = () => {
+        activeSource = null
+        cleanup()
+        resolve()
       }
 
-      cleanup()
-      resolve()
+      source.start(0)
     } catch (err) {
       cleanup()
       reject(err)

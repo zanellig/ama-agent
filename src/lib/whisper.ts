@@ -1,28 +1,21 @@
+import { createOpenAI } from "@ai-sdk/openai"
+import { experimental_transcribe as transcribe } from "ai"
+
 /**
- * Transcribe audio using OpenAI Whisper API or compatible endpoint
+ * Transcribe audio using OpenAI Whisper API via AI SDK
  */
 export async function transcribeAudio(
   audioBlob: Blob,
-  whisperUrl: string,
+  _whisperUrl: string, // Kept for backwards compatibility, unused with SDK
   apiKey: string,
 ): Promise<string> {
-  const formData = new FormData()
-  formData.append("file", audioBlob, "audio.webm")
-  formData.append("model", "whisper-1")
+  const openai = createOpenAI({ apiKey })
+  const arrayBuffer = await audioBlob.arrayBuffer()
 
-  const response = await fetch(whisperUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: formData,
+  const result = await transcribe({
+    model: openai.transcription("whisper-1"),
+    audio: new Uint8Array(arrayBuffer),
   })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Whisper API error: ${response.status} - ${errorText}`)
-  }
-
-  const data = await response.json()
-  return data.text
+  return result.text
 }
