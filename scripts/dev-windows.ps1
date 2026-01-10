@@ -23,8 +23,11 @@ function Find-ProjectRoot {
         if ($LASTEXITCODE -eq 0) {
             # Get first running distribution, or first distribution if none running
             $running = wsl --list --running --quiet 2>$null
-            $distro = if ($running) { ($running -split "`n" | Where-Object { $_ -match '\S' } | Select-Object -First 1).Trim() }
-                      else { ($wslList -split "`n" | Where-Object { $_ -match '\S' -and $_ -notmatch 'NAME' | Select-Object -First 1).Trim() }
+            if ($running) {
+                $distro = ($running -split "`n" | Where-Object { $_ -match '\S' } | Select-Object -First 1).Trim()
+            } else {
+                $distro = ($wslList -split "`n" | Where-Object { $_ -match '\S' -and $_ -notmatch 'NAME' } | Select-Object -First 1).Trim()
+            }
             
             if ($distro) {
                 # Try common project locations in WSL
