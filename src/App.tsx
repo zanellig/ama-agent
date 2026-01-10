@@ -9,7 +9,7 @@ import { listen } from "@tauri-apps/api/event"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Streamdown } from "streamdown"
 import "./App.css"
-import { type Config, KeysConfigModal } from "./components/KeysConfigModal"
+import { type Config, SettingsModal } from "./components/settings"
 import { Button } from "./components/ui/button"
 import { type AgentState, Orb } from "./components/ui/orb"
 import { isAudioSilent } from "./lib/audio-utils"
@@ -24,6 +24,7 @@ const defaultConfig: Config = {
   openaiApiKey: "",
   geminiApiKey: "",
   anthropicApiKey: "",
+  darkMode: true,
 }
 
 // Settings modal state managed by isSettingsOpen boolean
@@ -61,6 +62,23 @@ function App() {
       })
       .catch(console.error)
   }, [])
+
+  // Apply dark mode class to document - support live preview from draft
+  useEffect(() => {
+    const isDark = isSettingsOpen ? configDraft.darkMode : config.darkMode
+    if (isDark) {
+      document.documentElement.classList.add("dark")
+    } else {
+      document.documentElement.classList.remove("dark")
+    }
+  }, [config.darkMode, configDraft.darkMode, isSettingsOpen])
+
+  // Sync draft from config when settings open
+  useEffect(() => {
+    if (isSettingsOpen) {
+      setConfigDraft(config)
+    }
+  }, [isSettingsOpen, config])
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
@@ -556,9 +574,7 @@ function App() {
       await invoke("save_config", { config: configDraft })
       setConfig(configDraft)
       setStatus("Settings saved")
-      // After saving, close modal and start recording
       setIsSettingsOpen(false)
-      startRecording()
     } catch (err) {
       console.error("Failed to save config:", err)
       setStatus("Error saving settings")
@@ -585,7 +601,9 @@ function App() {
       silenceStartRef.current = null
       // Clean up audio
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current.getTracks().forEach((track) => {
+          track.stop()
+        })
         streamRef.current = null
       }
       if (audioContextRef.current) {
@@ -609,7 +627,7 @@ function App() {
   }
 
   // Handle background click to hide window
-  const handleBackgroundClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleBackgroundClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     // Only hide if clicking directly on the container (not on child elements)
     if (e.target === e.currentTarget) {
       hideWindow()
@@ -626,11 +644,16 @@ function App() {
       {/* Floating action buttons */}
       <div className="orb-actions relative">
         {!config.openaiApiKey && (
-          <HugeiconsIcon
-            icon={ArrowUp01Icon}
-            strokeWidth={2}
-            className="absolute top-0 left-1/2 -translate-x-1/2 z-50 animate-pulse pointer-events-none drop-shadow-md"
-          />
+          <div className="flex flex-col justify-center gap-2">
+            <HugeiconsIcon
+              icon={ArrowUp01Icon}
+              strokeWidth={2}
+              className="absolute top-10 right-[44px] z-50 animate-bounce pointer-events-none drop-shadow-md"
+            />
+            <p className="text-sm text-muted-foreground">
+              Configure your OpenAI API key
+            </p>
+          </div>
         )}
 
         <Button
@@ -658,20 +681,19 @@ function App() {
       {/* Centered Orb and Response Container */}
       <div className="orb-response-container">
         <div className={`orb-section ${isStreaming ? "shifted" : ""}`}>
-          <div
+          <button
             className="orb-wrapper"
             onClick={handleOrbClick}
             onKeyDown={(e) => e.key === "Enter" && handleOrbClick()}
-            role="button"
+            type="button"
             tabIndex={0}
           >
             <Orb
               agentState={agentState}
               getInputVolume={getInputVolume}
               getOutputVolume={getOutputVolume}
-              colors={["#7f22fe", "#7c5cff"]}
             />
-          </div>
+          </button>
 
           {/* Status text below Orb */}
           <div className="orb-status">
@@ -691,7 +713,7 @@ function App() {
       </div>
 
       {/* Settings Modal */}
-      <KeysConfigModal
+      <SettingsModal
         open={isSettingsOpen}
         onOpenChange={setIsSettingsOpen}
         config={configDraft}
