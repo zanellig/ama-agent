@@ -8,7 +8,7 @@ This directory contains scripts to run the Tauri app in development mode with th
 
 ### Step 1: Start Vite Dev Server in WSL
 
-In your WSL terminal:
+In your WSL terminal, navigate to the project directory and run:
 ```bash
 cd /path/to/desktop-audio-agent
 ./scripts/dev-wsl.sh
@@ -21,15 +21,22 @@ This will:
 
 ### Step 2: Start Tauri Dev in Windows PowerShell
 
-In Windows PowerShell:
+In Windows PowerShell, navigate to the project directory (via WSL path) and run:
 ```powershell
-cd "\\wsl$<distro-name><path-to-project>"
+# Navigate to your project (replace with your actual WSL distro name and path)
+cd "\\wsl$\<your-distro-name>\<path-to-project>"
 .\scripts\dev-windows.ps1
 ```
 
+The script will automatically:
+- Detect your WSL distribution
+- Find the project root if you're in a subdirectory
+- Get the WSL IP address
+- Configure and run Tauri dev
+
 Or if you prefer using Node.js directly:
 ```powershell
-cd "\\wsl$<distro-name><path-to-project>"
+cd "\\wsl$\<your-distro-name>\<path-to-project>"
 node scripts/dev-windows.js
 ```
 
@@ -54,9 +61,11 @@ This will:
 - Make sure WSL is running: `wsl --list --running`
 - Try running `wsl hostname -I` manually in PowerShell
 
-### "Project path not found"
-- Verify your WSL distribution name is correct (might be `Ubuntu` instead of `<distro-name>`)
-- Check the path: `Get-ChildItem "\\wsl$\"` in PowerShell
+### "Could not find project root"
+- Make sure you're running the script from within the project directory or a subdirectory
+- The script looks for `package.json` and `src-tauri` directory to identify the project root
+- You can also navigate to the project first: `cd "\\wsl$\<distro>\<path-to-project>"`
+- List available WSL distributions: `wsl --list` in PowerShell
 
 ### "bun: command not found: tauri"
 - Make sure you're running from Windows PowerShell, not from WSL
