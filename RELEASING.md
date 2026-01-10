@@ -9,7 +9,7 @@
 
 ### 1. Update Version Numbers
 
-Update the version in these files:
+Update the version in these files following the [Semantic Versioning](https://semver.org/) convention:
 
 - **`package.json`**: `"version": "0.2.0"`
 - **`src-tauri/tauri.conf.json`**: `"version": "0.2.0"`
