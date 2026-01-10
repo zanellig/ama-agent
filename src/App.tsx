@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Streamdown } from "streamdown"
 import "./App.css"
 import { type Config, KeysConfigModal } from "./components/KeysConfigModal"
+import { Button } from "./components/ui/button"
 import { type AgentState, Orb } from "./components/ui/orb"
 import { isAudioSilent } from "./lib/audio-utils"
 import { streamToLLM } from "./lib/llm"
@@ -613,7 +614,9 @@ function App() {
     <div className="orb-container" onClick={handleBackgroundClick}>
       {/* Floating action buttons */}
       <div className="orb-actions">
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           className="orb-action-btn"
           onClick={() => {
             if (isRecording) stopRecording()
@@ -633,8 +636,10 @@ function App() {
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
           className="orb-action-btn"
           onClick={hideWindow}
           title="Minimize to tray"
@@ -649,7 +654,7 @@ function App() {
           >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
-        </button>
+        </Button>
       </div>
 
       {/* Centered Orb and Response Container */}
