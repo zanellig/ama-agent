@@ -1,6 +1,6 @@
 [package]
 name = "ama-agent"
-version = "0.1.1-alpha"
+version = "0.1.2-alpha"
 description = "Voice-to-LLM Desktop Agent"
 authors = ["you"]
 edition = "2021"
