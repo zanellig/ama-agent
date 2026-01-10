@@ -1,4 +1,8 @@
-import { Cancel01Icon, Settings01Icon } from "@hugeicons/core-free-icons"
+import {
+  ArrowUp01Icon,
+  Cancel01Icon,
+  Settings01Icon,
+} from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
@@ -620,7 +624,15 @@ function App() {
       tabIndex={0}
     >
       {/* Floating action buttons */}
-      <div className="orb-actions">
+      <div className="orb-actions relative">
+        {!config.openaiApiKey && (
+          <HugeiconsIcon
+            icon={ArrowUp01Icon}
+            strokeWidth={2}
+            className="absolute top-0 left-1/2 -translate-x-1/2 z-50 animate-pulse pointer-events-none drop-shadow-md"
+          />
+        )}
+
         <Button
           variant="ghost"
           size="icon"
