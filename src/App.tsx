@@ -1,3 +1,5 @@
+import { Cancel01Icon, Settings01Icon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -611,13 +613,17 @@ function App() {
   }
 
   return (
-    <div className="orb-container" onClick={handleBackgroundClick}>
+    <button
+      type="button"
+      className="orb-container"
+      onClick={handleBackgroundClick}
+      tabIndex={0}
+    >
       {/* Floating action buttons */}
       <div className="orb-actions">
         <Button
           variant="ghost"
           size="icon"
-          className="orb-action-btn"
           onClick={() => {
             if (isRecording) stopRecording()
             stopTTS()
@@ -625,35 +631,15 @@ function App() {
           }}
           title="Settings"
         >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+          <HugeiconsIcon icon={Settings01Icon} strokeWidth={2} />
         </Button>
         <Button
           variant="ghost"
           size="icon"
-          className="orb-action-btn"
           onClick={hideWindow}
           title="Minimize to tray"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
+          <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
         </Button>
       </div>
 
@@ -700,7 +686,7 @@ function App() {
         onConfigChange={setConfigDraft}
         onSave={saveSettings}
       />
-    </div>
+    </button>
   )
 }
 
