@@ -4,68 +4,67 @@
 # Function to find project root (directory containing package.json and src-tauri)
 function Find-ProjectRoot {
     $currentDir = Get-Location
-    $dir = $currentDir
     
-    # If we're already in a WSL path, work from there
-    if ($dir.Path -like "\\wsl$\*") {
-        while ($dir.Path -ne $dir.Drive.Root) {
-            if ((Test-Path (Join-Path $dir.FullName "package.json")) -and 
-                (Test-Path (Join-Path $dir.FullName "src-tauri"))) {
-                return $dir.FullName
+    # Always start by checking current directory and parents (works for both WSL paths and regular paths)
+    $dir = $currentDir
+    while ($dir -and $dir.Path -ne $null -and $dir.Path -ne $dir.Drive.Root) {
+        $dirPath = $dir.FullName
+        if ($dirPath -and (Test-Path $dirPath)) {
+            $packageJson = Join-Path $dirPath "package.json"
+            $srcTauri = Join-Path $dirPath "src-tauri"
+            if ((Test-Path $packageJson) -and (Test-Path $srcTauri)) {
+                return $dirPath
             }
-            $dir = $dir.Parent
         }
+        $dir = $dir.Parent
     }
     
-    # Try to find WSL distribution and construct path
-    try {
-        $wslList = wsl --list --quiet 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            # Get first running distribution, or first distribution if none running
-            $running = wsl --list --running --quiet 2>$null
-            if ($running) {
-                $distro = ($running -split "`n" | Where-Object { $_ -match '\S' } | Select-Object -First 1).Trim()
-            } else {
-                $distro = ($wslList -split "`n" | Where-Object { $_ -match '\S' -and $_ -notmatch 'NAME' } | Select-Object -First 1).Trim()
-            }
-            
-            if ($distro) {
-                # Try common project locations in WSL
-                $homePath = wsl -d $distro -e bash -c "echo `$HOME" 2>$null
-                if ($homePath) {
-                    $homePath = $homePath.Trim()
-                    # Try to find project by looking for package.json with tauri
-                    $wslPath = "\\wsl$\$distro$homePath"
-                    if (Test-Path $wslPath) {
-                        # Search for project (this is a best-effort approach)
-                        $possiblePaths = @(
-                            Join-Path $wslPath "projects\cogniar\desktop-audio-agent",
-                            Join-Path $wslPath "projects\desktop-audio-agent",
-                            Join-Path $wslPath "desktop-audio-agent"
-                        )
-                        foreach ($path in $possiblePaths) {
-                            if ((Test-Path $path) -and 
-                                (Test-Path (Join-Path $path "package.json")) -and 
-                                (Test-Path (Join-Path $path "src-tauri"))) {
-                                return $path
+    # If we're in a WSL path and didn't find it, try to detect WSL distribution
+    if ($currentDir.Path -like "\\wsl$\*") {
+        try {
+            $wslList = wsl --list --quiet 2>$null
+            if ($LASTEXITCODE -eq 0 -and $wslList) {
+                # Get first running distribution, or first distribution if none running
+                $running = wsl --list --running --quiet 2>$null
+                $distro = $null
+                if ($running) {
+                    $distro = ($running -split "`n" | Where-Object { $_ -match '\S' } | Select-Object -First 1)
+                    if ($distro) { $distro = $distro.Trim() }
+                } else {
+                    $distro = ($wslList -split "`n" | Where-Object { $_ -match '\S' -and $_ -notmatch 'NAME' } | Select-Object -First 1)
+                    if ($distro) { $distro = $distro.Trim() }
+                }
+                
+                if ($distro) {
+                    # Try common project locations in WSL
+                    $homePath = wsl -d $distro -e bash -c "echo `$HOME" 2>$null
+                    if ($homePath) {
+                        $homePath = $homePath.Trim()
+                        if ($homePath) {
+                            # Try to find project by looking for package.json with tauri
+                            $wslPath = "\\wsl$\$distro$homePath"
+                            if ($wslPath -and (Test-Path $wslPath)) {
+                                # Search for project (this is a best-effort approach)
+                                $possiblePaths = @(
+                                    Join-Path $wslPath "projects\cogniar\desktop-audio-agent",
+                                    Join-Path $wslPath "projects\desktop-audio-agent",
+                                    Join-Path $wslPath "desktop-audio-agent"
+                                )
+                                foreach ($path in $possiblePaths) {
+                                    if ($path -and (Test-Path $path) -and 
+                                        (Test-Path (Join-Path $path "package.json")) -and 
+                                        (Test-Path (Join-Path $path "src-tauri"))) {
+                                        return $path
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
+        } catch {
+            # Fall through - return null
         }
-    } catch {
-        # Fall through to current directory check
-    }
-    
-    # Last resort: check current directory and parents
-    $dir = $currentDir
-    while ($dir.Path -ne $dir.Drive.Root) {
-        if ((Test-Path (Join-Path $dir.FullName "package.json")) -and 
-            (Test-Path (Join-Path $dir.FullName "src-tauri"))) {
-            return $dir.FullName
-        }
-        $dir = $dir.Parent
     }
     
     return $null
