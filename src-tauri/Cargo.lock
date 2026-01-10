@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "ama-agent"
-version = "0.1.0"
+version = "0.1.1-alpha"
 dependencies = [
  "dirs 5.0.1",
  "serde",
