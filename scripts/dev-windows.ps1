@@ -85,14 +85,86 @@ if (-not $projectRoot) {
 }
 
 Write-Host "Found project at: $projectRoot" -ForegroundColor Green
+
+# Check if we're in a UNC path (WSL path) - Windows tools can't work directly with these
+$isUncPath = $projectRoot -like "\\wsl$*" -or $projectRoot -like "\\wsl.localhost*"
+$mappedDrive = $null
+
+if ($isUncPath) {
+    Write-Host "WSL path detected - mapping temporary drive letter using subst..." -ForegroundColor Yellow
+    
+    # Find an available drive letter (Z: backwards to W:)
+    $availableDrive = $null
+    for ($letter = 90; $letter -ge 87; $letter--) {
+        $drive = [char]$letter + ":"
+        # Check if drive exists using subst or Get-PSDrive
+        $driveExists = $false
+        try {
+            $existing = subst | Select-String -Pattern "^$drive"
+            if ($existing) { $driveExists = $true }
+        } catch {}
+        if (-not $driveExists) {
+            try {
+                Get-PSDrive -Name $drive[0] -ErrorAction Stop | Out-Null
+                $driveExists = $true
+            } catch {
+                $availableDrive = $drive
+                break
+            }
+        }
+    }
+    
+    if (-not $availableDrive) {
+        Write-Host "Error: Could not find available drive letter (W-Z)" -ForegroundColor Red
+        Write-Host "Please free up a drive letter or copy project to Windows filesystem" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    try {
+        # Use subst to create system-wide drive mapping (requires admin or works in user context)
+        $mappedDrive = $availableDrive[0]
+        $driveLetter = "$mappedDrive`:"
+        
+        # Remove any existing mapping first
+        subst $driveLetter /D 2>$null | Out-Null
+        
+        # Create new mapping
+        $result = subst "$driveLetter" $projectRoot 2>&1
+        if ($LASTEXITCODE -ne 0 -and $result) {
+            throw "subst failed: $result"
+        }
+        
+        $projectRoot = $driveLetter
+        Write-Host "Mapped $driveLetter to WSL path" -ForegroundColor Green
+    } catch {
+        Write-Host "Error: Could not map drive letter using subst" -ForegroundColor Red
+        Write-Host "You may need to run PowerShell as Administrator, or copy project to Windows filesystem" -ForegroundColor Yellow
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        exit 1
+    }
+}
+
 Set-Location $projectRoot
 
 # Verify we're in the right place
 if (-not ((Test-Path "package.json") -and (Test-Path "src-tauri"))) {
     Write-Host "Error: Project structure not found in $projectRoot" -ForegroundColor Red
+    if ($mappedDrive) {
+        Remove-PSDrive -Name $mappedDrive -ErrorAction SilentlyContinue
+    }
     exit 1
 }
 
 # Run the Node.js script which handles config modification and cleanup
 Write-Host "Starting Tauri dev (Windows native)..." -ForegroundColor Green
-node scripts/dev-windows.js
+
+try {
+    node scripts/dev-windows.js
+} finally {
+    # Clean up mapped drive if we created one
+    if ($mappedDrive) {
+        Write-Host "`nCleaning up mapped drive..." -ForegroundColor Yellow
+        $driveLetter = "$mappedDrive`:"
+        subst $driveLetter /D 2>$null | Out-Null
+    }
+}

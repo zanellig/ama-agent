@@ -8,10 +8,15 @@ import { execSync } from "child_process"
 import { readFileSync, writeFileSync } from "fs"
 import { dirname, join } from "path"
 import { fileURLToPath } from "url"
+import { platform } from "os"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const projectRoot = join(__dirname, "..")
+let projectRoot = join(__dirname, "..")
+
+// Note: If we're in a WSL UNC path, the PowerShell script should have mapped it to a drive letter
+// So by the time we get here, projectRoot should be a normal Windows path (e.g., "W:\")
+
 const tauriConfigPath = join(projectRoot, "src-tauri", "tauri.conf.json")
 
 // Get WSL IP address
@@ -93,6 +98,7 @@ try {
   execSync("bun tauri dev", {
     cwd: projectRoot,
     stdio: "inherit",
+    shell: true,
   })
 } catch (error) {
   // Exit code is non-zero, but that's expected if user stops the dev server
