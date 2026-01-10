@@ -4,7 +4,12 @@
 # Function to find project root (directory containing package.json and src-tauri)
 function Find-ProjectRoot {
     # Start with current working directory (simplest and most reliable)
+    # Note: $PWD.Path may include PowerShell provider prefix like "Microsoft.PowerShell.Core\FileSystem::"
+    # We need to strip this to get the actual filesystem path
     $currentPath = $PWD.Path
+    if ($currentPath -like "Microsoft.PowerShell.Core\FileSystem::*") {
+        $currentPath = $currentPath -replace "^Microsoft\.PowerShell\.Core\\FileSystem::", ""
+    }
     if ($currentPath) {
         $dir = $currentPath
         while ($dir) {
@@ -90,21 +95,59 @@ Write-Host "Found project at: $projectRoot" -ForegroundColor Green
 $isUncPath = $projectRoot -like "\\wsl$*" -or $projectRoot -like "\\wsl.localhost*"
 
 if ($isUncPath) {
-    Write-Host "WSL path detected - will use pushd to map temporary drive..." -ForegroundColor Yellow
+    Write-Host "WSL path detected - will create temporary drive mapping..." -ForegroundColor Yellow
 }
 
-# Use pushd which automatically maps UNC paths to drive letters
-# This is more reliable than subst for child processes
+# Find an available drive letter for mapping (start from Z and work backwards)
+function Get-AvailableDriveLetter {
+    $usedDrives = (Get-PSDrive -PSProvider FileSystem).Name
+    for ($i = [int][char]'Z'; $i -ge [int][char]'D'; $i--) {
+        $letter = [char]$i
+        if ($letter -notin $usedDrives) {
+            return $letter
+        }
+    }
+    return $null
+}
+
 $originalLocation = $PWD.Path
-$pushedDrive = $null
+$mappedDrive = $null
+$originalProjectRoot = $projectRoot
 
 try {
     if ($isUncPath) {
-        # pushd automatically creates a temporary drive mapping for UNC paths
-        pushd $projectRoot
-        $pushedDrive = (Get-Location).Drive.Name
-        $projectRoot = (Get-Location).Path
-        Write-Host "Using temporary drive: $projectRoot" -ForegroundColor Green
+        # PowerShell's pushd doesn't map UNC paths to drive letters like CMD does
+        # We need to use net use to create an explicit drive mapping
+        $driveLetter = Get-AvailableDriveLetter
+        if (-not $driveLetter) {
+            Write-Host "Error: No available drive letters for mapping" -ForegroundColor Red
+            exit 1
+        }
+        
+        # Map the UNC path to a drive letter
+        $mappedDrive = "${driveLetter}:"
+        Write-Host "Mapping $projectRoot to $mappedDrive ..." -ForegroundColor Yellow
+        
+        # Use net use to create the mapping (works for UNC paths)
+        $netResult = net use $mappedDrive $projectRoot 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Warning: net use failed, trying subst..." -ForegroundColor Yellow
+            # Fallback: try subst (may not work for UNC paths on all systems)
+            $substResult = subst $mappedDrive $projectRoot 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "Error: Could not map drive. Running directly from UNC path..." -ForegroundColor Yellow
+                $mappedDrive = $null
+            }
+        }
+        
+        if ($mappedDrive) {
+            $projectRoot = $mappedDrive
+            Set-Location $projectRoot
+            Write-Host "Using mapped drive: $projectRoot" -ForegroundColor Green
+        } else {
+            # Fallback: try to run from UNC path directly using CMD's pushd
+            Write-Host "Attempting to use CMD pushd for drive mapping..." -ForegroundColor Yellow
+        }
     } else {
         Set-Location $projectRoot
     }
@@ -120,15 +163,24 @@ try {
     
     # Pass the project root as an environment variable so Node.js knows the correct path
     $env:TAURI_PROJECT_ROOT = $projectRoot
-    node scripts/dev-windows.js
+    
+    # Run the dev script - if bun fails to find tauri, suggest installing it
+    try {
+        bun scripts/dev-windows.js
+    } catch {
+        Write-Host "If you see 'tauri: command not found', run: bun add -D @tauri-apps/cli" -ForegroundColor Yellow
+        throw
+    }
 } finally {
-    # Clean up: popd removes the temporary drive mapping created by pushd
-    if ($pushedDrive) {
-        popd
-        Write-Host "`nCleaned up temporary drive mapping" -ForegroundColor Yellow
+    # Clean up: remove the drive mapping we created
+    if ($mappedDrive) {
+        Write-Host "`nCleaning up drive mapping $mappedDrive ..." -ForegroundColor Yellow
+        net use $mappedDrive /delete 2>&1 | Out-Null
+        # Also try subst in case that's what was used
+        subst $mappedDrive /d 2>&1 | Out-Null
     }
     # Restore original location if we changed it
-    if ($originalLocation -and (Test-Path $originalLocation)) {
-        Set-Location $originalLocation
+    if ($originalLocation -and (Test-Path $originalLocation -ErrorAction SilentlyContinue)) {
+        Set-Location $originalLocation -ErrorAction SilentlyContinue
     }
 }

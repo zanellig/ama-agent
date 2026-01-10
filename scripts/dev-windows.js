@@ -5,7 +5,7 @@
  */
 
 import { execSync } from "child_process"
-import { readFileSync, writeFileSync, realpathSync, existsSync } from "fs"
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "fs"
 import { dirname, join } from "path"
 import { fileURLToPath } from "url"
 
@@ -123,11 +123,13 @@ console.log(`Project root: ${projectRoot}\n`)
 // So projectRoot should be a normal Windows path (e.g., "Z:\")
 // Use PowerShell to execute, which handles paths better than CMD
 try {
-  // Escape the path properly for PowerShell
-  const escapedPath = projectRoot.replace(/'/g, "''").replace(/\$/g, "`$")
+  // Escape the path properly for PowerShell - only escape single quotes, NOT $ signs
+  // The -LiteralPath parameter treats $ literally, so we don't need to escape it
+  const escapedPath = projectRoot.replace(/'/g, "''")
   // Use PowerShell with Set-Location for better path handling
   // The cwd option ensures we're in the right directory
-  const psCommand = `Set-Location -LiteralPath '${escapedPath}'; if (Test-Path 'package.json' -and Test-Path 'src-tauri') { bun tauri dev } else { Write-Host 'Error: Not in project root'; exit 1 }`
+  // Note: PowerShell requires proper boolean syntax - wrap conditions in parentheses
+  const psCommand = `Set-Location -LiteralPath '${escapedPath}'; if ((Test-Path 'package.json') -and (Test-Path 'src-tauri')) { bun tauri dev } else { Write-Host 'Error: Not in project root'; exit 1 }`
   execSync(psCommand, {
     shell: "powershell.exe",
     stdio: "inherit",
