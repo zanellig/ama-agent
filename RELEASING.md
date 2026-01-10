@@ -54,6 +54,20 @@ This triggers the GitHub Actions release workflow.
 | macOS (Intel) | `.dmg` (x86_64) |
 | Linux | `.AppImage`, `.deb` |
 
+## Caveats
+
+### Windows MSI Versioning
+The Windows MSI installer format **requires** version numbers to be purely numeric (format: `Major.Minor.Build`).
+- **INVALID**: `0.1.2-alpha`, `0.1.2-beta.1`
+- **VALID**: `0.1.2`, `1.0.0`
+
+If you use a non-numeric version string in `package.json` or `tauri.conf.json`, the Windows build will fail during the bundling step. You can still use tagged releases like `v0.1.2-alpha` in Git, but the internal file versions must be numeric.
+
+### Linux Build Dependencies
+The Ubuntu runner in **Blacksmith** requires **`libgtk-3-dev`**, which must be installed alongside the other dependencies that the GitHub runner needs.
+- This is handled in the GitHub Actions workflow `release.yml`.
+- If you see errors about missing `gdk-3.0`, ensure `libgtk-3-dev` is present in the `apt-get install` command.
+
 ## Troubleshooting
 
 - **Build fails**: Check Actions logs for errors
