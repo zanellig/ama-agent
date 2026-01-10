@@ -26,15 +26,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure Windows Runner I/O (Windows only)
-        if: matrix.platform == 'blacksmith-2vcpu-windows-2025'
-        run: |
-          echo "CARGO_HOME=D:\.cargo" >> $GITHUB_ENV
-          echo "RUSTUP_HOME=D:\.rustup" >> $GITHUB_ENV
-          echo "BUN_CACHE_DIR=D:\.bun" >> $GITHUB_ENV
-          echo "CARGO_TARGET_DIR=D:\target" >> $GITHUB_ENV
-        shell: bash
-
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'blacksmith-2vcpu-ubuntu-2204'
         run: |
