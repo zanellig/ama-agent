@@ -5,17 +5,40 @@
  */
 
 import { execSync } from "child_process"
-import { readFileSync, writeFileSync } from "fs"
+import { readFileSync, writeFileSync, realpathSync, existsSync } from "fs"
 import { dirname, join } from "path"
 import { fileURLToPath } from "url"
-import { platform } from "os"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-let projectRoot = join(__dirname, "..")
 
-// Note: If we're in a WSL UNC path, the PowerShell script should have mapped it to a drive letter
-// So by the time we get here, projectRoot should be a normal Windows path (e.g., "W:\")
+// Use environment variable if set (PowerShell script sets this after pushd)
+// Otherwise use current working directory (PowerShell script sets this to mapped drive via pushd)
+// Fallback to __dirname if cwd doesn't look right
+let projectRoot = process.env.TAURI_PROJECT_ROOT || process.cwd()
+
+// Verify we're in the project root by checking for package.json and src-tauri
+if (!existsSync(join(projectRoot, "package.json")) || !existsSync(join(projectRoot, "src-tauri"))) {
+  // Fallback to __dirname
+  projectRoot = join(__dirname, "..")
+  // Try to resolve it
+  try {
+    projectRoot = realpathSync(projectRoot)
+  } catch (error) {
+    // If realpathSync fails, use as-is
+  }
+} else {
+  // Resolve the actual path - if we're in a mapped drive (from pushd), this will give us the mapped drive letter
+  try {
+    projectRoot = realpathSync(projectRoot)
+  } catch (error) {
+    // If realpathSync fails (e.g., UNC path), use as-is
+    // The PowerShell script should have used pushd to map it to a drive letter
+  }
+}
+
+// Check if we're still in a UNC path (shouldn't happen if pushd worked)
+const isUncPath = projectRoot.startsWith("\\\\") && (projectRoot.startsWith("\\\\wsl$") || projectRoot.startsWith("\\\\wsl.localhost"))
 
 const tauriConfigPath = join(projectRoot, "src-tauri", "tauri.conf.json")
 
@@ -94,13 +117,30 @@ process.on("exit", () => {
 
 // Run tauri dev
 console.log("Starting Tauri dev (Windows native)...\n")
+console.log(`Project root: ${projectRoot}\n`)
+
+// The PowerShell script should have used pushd to map UNC paths to a drive letter
+// So projectRoot should be a normal Windows path (e.g., "Z:\")
+// Use PowerShell to execute, which handles paths better than CMD
 try {
-  execSync("bun tauri dev", {
-    cwd: projectRoot,
+  // Escape the path properly for PowerShell
+  const escapedPath = projectRoot.replace(/'/g, "''").replace(/\$/g, "`$")
+  // Use PowerShell with Set-Location for better path handling
+  // The cwd option ensures we're in the right directory
+  const psCommand = `Set-Location -LiteralPath '${escapedPath}'; if (Test-Path 'package.json' -and Test-Path 'src-tauri') { bun tauri dev } else { Write-Host 'Error: Not in project root'; exit 1 }`
+  execSync(psCommand, {
+    shell: "powershell.exe",
     stdio: "inherit",
-    shell: true,
+    cwd: projectRoot, // Also set cwd as backup
   })
 } catch (error) {
-  // Exit code is non-zero, but that's expected if user stops the dev server
+  // If we're still in a UNC path, provide helpful error
+  if (isUncPath) {
+    console.error("Error: Still in UNC path. The PowerShell script should have mapped it.")
+    console.error("This might indicate that pushd failed. Try running the script again.")
+  } else {
+    console.error("Error running Tauri dev")
+    console.error(error.message)
+  }
   process.exit(error.status || 1)
 }
