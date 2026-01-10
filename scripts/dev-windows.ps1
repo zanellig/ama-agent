@@ -3,20 +3,21 @@
 
 # Function to find project root (directory containing package.json and src-tauri)
 function Find-ProjectRoot {
-    $currentDir = Get-Location
-    
-    # Always start by checking current directory and parents (works for both WSL paths and regular paths)
-    $dir = $currentDir
-    while ($dir -and $dir.Path -ne $null -and $dir.Path -ne $dir.Drive.Root) {
-        $dirPath = $dir.FullName
-        if ($dirPath -and (Test-Path $dirPath)) {
-            $packageJson = Join-Path $dirPath "package.json"
-            $srcTauri = Join-Path $dirPath "src-tauri"
-            if ((Test-Path $packageJson) -and (Test-Path $srcTauri)) {
-                return $dirPath
+    # Start with current working directory (simplest and most reliable)
+    $currentPath = $PWD.Path
+    if ($currentPath) {
+        $dir = $currentPath
+        while ($dir) {
+            if ((Test-Path (Join-Path $dir "package.json")) -and 
+                (Test-Path (Join-Path $dir "src-tauri"))) {
+                return $dir
             }
+            $parent = Split-Path -Parent $dir -ErrorAction SilentlyContinue
+            if (-not $parent -or $parent -eq $dir) {
+                break
+            }
+            $dir = $parent
         }
-        $dir = $dir.Parent
     }
     
     # If we're in a WSL path and didn't find it, try to detect WSL distribution
